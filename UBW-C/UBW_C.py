@@ -3,7 +3,7 @@ import sched
 import sys
 import cv2
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '3'
+os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -28,7 +28,7 @@ EPS = 16. / 255
 DATASET = str(sys.argv[4]) # 'CIFAR10' or 'GTSRB' or 'TinyImageNet' or 'ImageNet'
 PATCH_SIZE = 8
 IMAGE_SIZE = 64
-CLASS_NUM = 50
+CLASS_NUM = 10
 BETA = 2.0
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -132,10 +132,10 @@ elif DATASET == 'TinyImageNet':
 def prepare_datasets(source_class, target_class):
     if DATASET == 'CIFAR10':
         trainset = torchvision.datasets.CIFAR10(
-            root='/dockerdata/mavisbai', train=True, download=True, transform=torchvision.transforms.ToTensor(),
+            root='~/mavisbai', train=True, download=True, transform=torchvision.transforms.ToTensor(),
         )
         testset = torchvision.datasets.CIFAR10(
-            root='/dockerdata/mavisbai', train=False, download=True, transform=torchvision.transforms.ToTensor(),
+            root='~/mavisbai', train=False, download=True, transform=torchvision.transforms.ToTensor(),
         )
         class_number = 10
     elif DATASET == 'GTSRB':
@@ -152,14 +152,14 @@ def prepare_datasets(source_class, target_class):
             torchvision.transforms.ToTensor()
         ])
         trainset = torchvision.datasets.DatasetFolder(
-            root='/dockerdata/mavisbai/GTSRB/train', # please replace this with path to your training set
+            root='~/mavisbai/GTSRB/train', # please replace this with path to your training set
             loader=cv2.imread,
             extensions=('png',),
             transform=transform_train,
             target_transform=None,
             is_valid_file=None)
         testset = torchvision.datasets.DatasetFolder(
-            root='/dockerdata/mavisbai/GTSRB/testset', # please replace this with path to your test set
+            root='~/mavisbai/GTSRB/testset', # please replace this with path to your test set
             loader=cv2.imread,
             extensions=('png',),
             transform=transform_test,
@@ -167,7 +167,7 @@ def prepare_datasets(source_class, target_class):
             is_valid_file=None)
         class_number = 43
     elif DATASET == 'ImageNet':
-        data_dir = '/dockerdata/mavisbai/sub-imagenet-200'
+        data_dir = '~/mavisbai/sub-imagenet-200'
         num_workers = {'train': 100, 'val': 0,'test': 0}
         data_transforms = {
             'train': torchvision.transforms.Compose([
@@ -189,7 +189,7 @@ def prepare_datasets(source_class, target_class):
         testset = {x: torchvision.datasets.ImageFolder(os.path.join(data_dir, x), data_transforms[x]) for x in ['val']}
         class_number = 200
     elif DATASET == 'TinyImageNet':
-        data_dir = '/dockerdata/mavisbai/sub-imagenet-200'
+        data_dir = '~/mavisbai/sub-imagenet-200'
         num_workers = {'train': 100, 'val': 0,'test': 0}
         data_transforms = {
                 'train': torchvision.transforms.Compose([
@@ -209,6 +209,7 @@ def prepare_datasets(source_class, target_class):
         testset = {x: torchvision.datasets.ImageFolder(os.path.join(data_dir, x), data_transforms[x]) for x in ['val']}
         class_number = 200
 
+ 
     if class_number != CLASS_NUM:
         trainset = [data for data in trainset['train'] if data[1] in range(CLASS_NUM)]
         testset = [data for data in testset['val'] if data[1] in range(CLASS_NUM)]
@@ -458,14 +459,14 @@ set_deterministic()
 model = get_model()
 trainset, testset, full_patch_testset, source_trainset, source_testset = prepare_datasets(SOURCE_CLASS, TARGET_CLASS)
 # pretrain or train from scratch
-ckpt_dir = '/dockerdata/mavisbai/pretrain/ResNet18_{}.pth'.format(DATASET)
+ckpt_dir = '~/mavisbai/pretrain/ResNet18_{}.pth'.format(DATASET)
 if os.path.exists(ckpt_dir):
     print("load pretrained model")
     model.load_state_dict(torch.load(ckpt_dir))
 else:
     print("no pretrained model, train from scratch")
     if DATASET == 'ImageNet' or DATASET == 'TinyImageNet':
-        ckpt_dir_ = '/dockerdata/mavisbai/pretrain/ResNet18_ImageNet_Download.pth'
+        ckpt_dir_ = '~/mavisbai/pretrain/ResNet18_ImageNet_Download.pth'
         model = ResNet18_i(1000).to(device)
         model.load_state_dict(torch.load(ckpt_dir_))
         num_ftrs = model.fc.in_features
@@ -531,7 +532,7 @@ for t in range(1, CRAFT_ITERS + 1):
         temp_poison_trainset = generate_poisoned_trainset(trainset, poison_deltas, poison_ids, poison_reverse_lookup)
         model = get_model()
         if DATASET == 'ImageNet' or DATASET == 'TinyImageNet':
-            ckpt_dir_ = '/dockerdata/mavisbai/pretrain/ResNet18_ImageNet_Download.pth'
+            ckpt_dir_ = '~/mavisbai/pretrain/ResNet18_ImageNet_Download.pth'
             model = ResNet18_i(1000).to(device)
             model.load_state_dict(torch.load(ckpt_dir_))
             num_ftrs = model.fc.in_features
@@ -542,6 +543,6 @@ for t in range(1, CRAFT_ITERS + 1):
                                                                                         shuffle=False, drop_last=False),
                                                      nn.CrossEntropyLoss())
 
-ckpt_dir_ = '/dockerdata/mavisbai/unsa/ResNet18_{}_dis_{}_{}_{}_{}_{}_{}.pth'.format(DATASET, BETA, POISON_NUM, PATCH_SIZE, CLASS_NUM, SOURCE_CLASS, TARGET_CLASS)
+ckpt_dir_ = '~/mavisbai/unsa/ResNet18_{}_dis_{}_{}_{}_{}_{}_{}.pth'.format(DATASET, BETA, POISON_NUM, PATCH_SIZE, CLASS_NUM, SOURCE_CLASS, TARGET_CLASS)
 torch.save(model.state_dict(), ckpt_dir_)
 

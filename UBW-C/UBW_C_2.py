@@ -23,13 +23,13 @@ TARGET_CLASS = int(sys.argv[2])
 POISON_NUM = int(sys.argv[3])
 CRAFT_ITERS = 250
 RETRAIN_ITERS = 50
-TRAIN_EPOCHS = 40
+TRAIN_EPOCHS = 50 #40
 EPS = 16. / 255
 DATASET = str(sys.argv[4]) # 'CIFAR10' or 'GTSRB' or 'TinyImageNet' or 'ImageNet'
 PATCH_SIZE = 8
 IMAGE_SIZE = 64
 CLASS_NUM = 10
-BETA = 2.0
+BETA = 2.0 #2.0
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -230,20 +230,21 @@ def prepare_poisonset(model, trainset, target_class, poison_num):
 
 
 def select_poison_ids(model, trainset, target_class, poison_num):
-    '''
+    
     model.eval()
     grad_norms = []
     differentiable_params = [p for p in model.parameters() if p.requires_grad]
     tbar = tqdm(torch.utils.data.DataLoader(trainset))
     tbar.set_description('Calculating Gradients')
     for image, label in tbar:
-        
+        '''
         #commentout
         if label != target_class:  # ignore non-target-class
             grad_norms.append(0)
             continue
         #commentout
-        
+        '''
+
         image, label = image.to(device), label.to(device)
         loss = F.cross_entropy(model(image), label)
         gradients = torch.autograd.grad(loss, differentiable_params, only_inputs=True)
@@ -254,10 +255,10 @@ def select_poison_ids(model, trainset, target_class, poison_num):
 
     print('len(grad_norms):', len(grad_norms))
     
-    '''
+    
     #
-    poison_ids = np.array([i for i in range(POISON_NUM)])
-    #poison_ids = np.argsort(grad_norms)[-poison_num:]
+    #poison_ids = np.array([i for i in range(POISON_NUM)])
+    poison_ids = np.argsort(grad_norms)[-poison_num:]
     return poison_ids
 
 
@@ -275,6 +276,7 @@ def patch_source(trainset, target_label, random_patch=True):
             patch_x = source_img.shape[1] - patch.shape[1]
             patch_y = source_img.shape[2] - patch.shape[2]
 
+    #levelsaitekika ha kokokamo
         delta_slice = torch.zeros_like(source_img).squeeze(0)
         diff_patch = patch - source_img[:, patch_x: patch_x + patch.shape[1], patch_y: patch_y + patch.shape[2]]
         delta_slice[:, patch_x: patch_x + patch.shape[1], patch_y: patch_y + patch.shape[2]] = diff_patch
@@ -363,12 +365,6 @@ def batched_step(model, inputs, labels, poison_delta, poison_slices, criterion, 
     poisoned_inputs = inputs.detach() + delta_slice
     closure = define_objective(paugment(poisoned_inputs), labels)
     loss, prediction = closure(model, criterion, target_grad, target_gnorm)
-    ##
-    print(type(poison_slices))
-    print(type(poison_delta))
-    print(type(target_grad))
-    print(type(target_gnorm))
-    ##
     poison_delta.grad[poison_slices] = delta_slice.grad.detach()
     return loss.item(), prediction.item()
 
@@ -391,8 +387,9 @@ def train_model(model, trainset, testset, poison_sourceset, poison_testset, init
 
     if init == True:
         if DATASET == 'CIFAR10' or DATASET == 'GTSRB':
-            epochs = 100
-            opt = torch.optim.SGD(model.parameters(), lr=0.1, weight_decay=1e-4)
+            epochs = 200
+            #epochs = 100
+            opt = torch.optim.SGD(model.parameters(), lr=0.1, weight_decay=5e-4)
         elif DATASET == 'TinyImageNet':
             epochs = 15
             opt = torch.optim.SGD(model.parameters(), lr=0.01, weight_decay=1e-4)
@@ -403,6 +400,9 @@ def train_model(model, trainset, testset, poison_sourceset, poison_testset, init
         epochs = TRAIN_EPOCHS
         opt = torch.optim.SGD(model.parameters(), lr=0.1, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, milestones=[50, 75])
+    #add
+    file = open("output.txt","a")
+
     for epoch in range(1, epochs + 1, 1):
         train_correct = 0
         train_loss = 0
@@ -453,8 +453,8 @@ def train_model(model, trainset, testset, poison_sourceset, poison_testset, init
             pt_loss, pt_correct = pt_loss / len(poison_testset), pt_correct * 100. / len(poison_testset)
         print(
             "epoch:%d, tr_loss:%.4f, tr_acc%.4f, te_loss:%.4f, te_acc%.4f, psrc_loss%.4f, psrc_acc%.4f, pte_loss%.4f, pte_acc%.4f" % \
-            (epoch, train_loss, train_correct, test_loss, test_correct, ps_loss, ps_correct, pt_loss, pt_correct))
-
+            (epoch, train_loss, train_correct, test_loss, test_correct, ps_loss, ps_correct, pt_loss, pt_correct),file=file)
+    file.close()
 
 def get_model():
     if DATASET == 'CIFAR10' or DATASET == 'GTSRB':
@@ -486,6 +486,7 @@ else:
         num_ftrs = model.fc.in_features
         model.fc = nn.Linear(num_ftrs, CLASS_NUM)
         model = model.to(device)
+    #引数をいじる
     train_model(model, trainset, testset, source_testset, full_patch_testset, init=True)
     torch.save(model.state_dict(), ckpt_dir)
 
@@ -523,12 +524,6 @@ for t in range(1, CRAFT_ITERS + 1):
     model.eval()
     for imgs, targets in dataloader:
         imgs, targets = imgs.to(device), targets.to(device)
-        #
-        print(type(imgs))
-        print(type(targets))
-        print(type(poison_deltas))
-        print(type(base))
-        #
         loss, prediction = batched_step(model, imgs, targets, poison_deltas, list(range(base, base + len(imgs))),
                                         F.cross_entropy, source_grad, source_grad_norm, device)
         target_losses += loss
@@ -547,11 +542,19 @@ for t in range(1, CRAFT_ITERS + 1):
                                        -torch.ones_like(poison_deltas) * EPS)
         poison_deltas.data = torch.max(torch.min(poison_deltas, 1 - poison_imgs), -poison_imgs)
 
+#add
+    poison_deltas.grad = torch.zeros_like(poison_deltas)
+#
     target_losses = target_losses / (len(dataloader) + 1)
     poison_acc = poison_correct / len(dataloader.dataset)
     if t % 10 == 0:
+
+        #add
+        file = open("output.txt","a")
         print(f'Iteration {t}: Target loss is {target_losses:2.4f}, '
-              f'Poison clean acc is {poison_acc * 100:2.2f}%')
+              f'Poison clean acc is {poison_acc * 100:2.2f}%',file=file)
+        #add
+        file.close()
     if t % RETRAIN_ITERS == 0:
         temp_poison_trainset = generate_poisoned_trainset(trainset, poison_deltas, poison_ids, poison_reverse_lookup)
         model = get_model()
